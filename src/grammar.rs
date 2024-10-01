@@ -1,11 +1,19 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display, io::IsTerminal};
 
 fn termcolor(r: u8, g: u8, b: u8) -> String {
-    format!("\x1b[38;2;{};{};{}m", r, g, b)
+    if std::io::stdout().is_terminal() {
+        format!("\x1b[38;2;{};{};{}m", r, g, b)
+    } else {
+        "".into()
+    }
 }
 
 fn termreset() -> String {
-    "\x1b[0m".to_string()
+    if std::io::stdout().is_terminal() {
+        "\x1b[0m".to_string()
+    } else {
+        "".into()
+    }
 }
 
 fn num_to_alphastr(mut num: u32) -> String {
