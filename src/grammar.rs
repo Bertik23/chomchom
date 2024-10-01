@@ -44,7 +44,7 @@ pub enum EBNF {
     OneOrMore(Box<EBNF>),
     Optional(Box<EBNF>),
     Or(Vec<EBNF>),
-    Concat(Box<EBNF>, Box<EBNF>),
+    Concat(Vec<EBNF>),
 }
 
 #[derive(Debug)]
@@ -121,8 +121,14 @@ impl EBNF {
     fn to_ebnf(&self) -> String {
         match self {
             EBNF::Epsilon => "ε".into(),
-            EBNF::Concat(a, b) => {
-                format!("( {} {} )", a.to_ebnf(), b.to_ebnf())
+            EBNF::Concat(a) => {
+                format!(
+                    "( {} )",
+                    a.iter()
+                        .map(|x| x.to_ebnf())
+                        .collect::<Vec<String>>()
+                        .join(" ")
+                )
             }
             EBNF::OneOrMore(a) => format!("( {} ) +", a.to_ebnf()),
             EBNF::Optional(a) => format!("[ {} ]", a.to_ebnf()),
@@ -149,10 +155,11 @@ impl EBNF {
             EBNF::Epsilon => vec![NT::Epsilon],
             EBNF::Non(a) => vec![NT::Non(capitalize_first_letter(a))],
             EBNF::Term(a) => vec![NT::Term(a.clone())],
-            EBNF::Concat(a, b) => {
+            EBNF::Concat(a) => {
                 let mut v = vec![];
-                v.extend(a.to_chomsky(rules, nonterm_counter));
-                v.extend(b.to_chomsky(rules, nonterm_counter));
+                for a in a {
+                    v.extend(a.to_chomsky(rules, nonterm_counter));
+                }
                 v
             }
             EBNF::Or(a) => {

@@ -129,7 +129,7 @@ fn parse_alternation(tokens: &mut VecDeque<Token>) -> Result<EBNF, String> {
 
 fn flaten_cat(x: EBNF) -> Vec<EBNF> {
     match x {
-        EBNF::Or(or) => or.into_iter().flat_map(flaten_or).collect(),
+        EBNF::Concat(cat) => cat.into_iter().flat_map(flaten_cat).collect(),
         els => vec![els],
     }
 }
@@ -142,7 +142,12 @@ fn parse_concatanation(tokens: &mut VecDeque<Token>) -> Result<EBNF, String> {
         } else {
             let c = parse_concatanation(tokens);
             match c {
-                Ok(c) => Ok(EBNF::Concat(Box::new(factor), Box::new(c))),
+                Ok(c) => {
+                    let cs = vec![factor, c];
+                    Ok(EBNF::Concat(
+                        cs.into_iter().flat_map(flaten_cat).collect(),
+                    ))
+                }
                 Err(_) => Ok(factor),
             }
         }
