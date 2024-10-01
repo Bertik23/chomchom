@@ -43,7 +43,7 @@ pub enum EBNF {
     Iteration(Box<EBNF>),
     OneOrMore(Box<EBNF>),
     Optional(Box<EBNF>),
-    Or(Box<EBNF>, Box<EBNF>),
+    Or(Vec<EBNF>),
     Concat(Box<EBNF>, Box<EBNF>),
 }
 
@@ -126,7 +126,15 @@ impl EBNF {
             }
             EBNF::OneOrMore(a) => format!("( {} ) +", a.to_ebnf()),
             EBNF::Optional(a) => format!("[ {} ]", a.to_ebnf()),
-            EBNF::Or(a, b) => format!("( {} | {} )", a.to_ebnf(), b.to_ebnf()),
+            EBNF::Or(a) => {
+                format!(
+                    "( {} )",
+                    a.iter()
+                        .map(|x| x.to_ebnf())
+                        .collect::<Vec<String>>()
+                        .join(" | ")
+                )
+            }
             EBNF::Iteration(a) => format!("{{ {} }}", a.to_ebnf()),
             EBNF::Non(a) => a.to_string(),
             EBNF::Term(a) => format!("\"{}\"", a),
@@ -147,13 +155,13 @@ impl EBNF {
                 v.extend(b.to_chomsky(rules, nonterm_counter));
                 v
             }
-            EBNF::Or(a, b) => {
-                let na = a.to_chomsky(rules, nonterm_counter);
+            EBNF::Or(a) => {
                 let new_nt = num_to_alphastr(*nonterm_counter);
                 *nonterm_counter += 1;
-                rules.push((new_nt.clone(), na));
-                let nb = b.to_chomsky(rules, nonterm_counter);
-                rules.push((new_nt.clone(), nb));
+                for a in a {
+                    let na = a.to_chomsky(rules, nonterm_counter);
+                    rules.push((new_nt.clone(), na));
+                }
                 vec![NT::Non(new_nt)]
             }
             EBNF::Optional(a) => {

@@ -109,16 +109,28 @@ fn parse_factor(tokens: &mut VecDeque<Token>) -> Result<EBNF, String> {
     }
 }
 
+fn flaten_or(x: EBNF) -> Vec<EBNF> {
+    match x {
+        EBNF::Or(or) => or.into_iter().flat_map(flaten_or).collect(),
+        els => vec![els],
+    }
+}
+
 fn parse_alternation(tokens: &mut VecDeque<Token>) -> Result<EBNF, String> {
     let factor = parse_concatanation(tokens)?;
     if let Some(Token::Or) = tokens.front() {
         tokens.pop_front();
-        Ok(EBNF::Or(
-            Box::new(factor),
-            Box::new(parse_alternation(tokens)?),
-        ))
+        let r = vec![factor, parse_alternation(tokens)?];
+        Ok(EBNF::Or(r.into_iter().flat_map(flaten_or).collect()))
     } else {
         Ok(factor)
+    }
+}
+
+fn flaten_cat(x: EBNF) -> Vec<EBNF> {
+    match x {
+        EBNF::Or(or) => or.into_iter().flat_map(flaten_or).collect(),
+        els => vec![els],
     }
 }
 
