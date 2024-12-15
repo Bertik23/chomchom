@@ -1,16 +1,24 @@
 use crate::grammar::{GrammarEBNF, EBNF};
 use crate::tokeniser::Token;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 
 pub fn parse(tokens: Vec<Token>) -> Result<GrammarEBNF, String> {
     let mut deq: VecDeque<Token> = tokens.into();
-    let mut rules: HashMap<String, Vec<EBNF>> = HashMap::new();
+    let mut rules: BTreeMap<String, Vec<EBNF>> = BTreeMap::new();
+    let mut start_nonterm: Option<String> = None;
     while !deq.is_empty() {
         let (nonterm, rule) = parse_rule(&mut deq)?;
+        if start_nonterm.is_none() {
+            start_nonterm = Some(nonterm.clone());
+        }
         rules.entry(nonterm).or_default().push(rule);
     }
 
-    Ok(GrammarEBNF { rules })
+    Ok(GrammarEBNF {
+        start_nonterm: start_nonterm
+            .unwrap_or("No starting nonterminal.".into()),
+        rules,
+    })
 }
 
 fn parse_rule(tokens: &mut VecDeque<Token>) -> Result<(String, EBNF), String> {
@@ -105,7 +113,7 @@ fn parse_factor(tokens: &mut VecDeque<Token>) -> Result<EBNF, String> {
             _ => Ok(term),
         }
     } else {
-        Err("idk co sem napsat".into())
+        Err("Expected one of Asterix or Plus, found EOF".into())
     }
 }
 
