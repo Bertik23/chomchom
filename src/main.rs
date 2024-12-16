@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //     &ast.to_chomsky()
     // )?);
     let parser = parser_generator::get_parser(ast.to_chomsky())?;
-    dbg!(parser("12+12"));
+    dbg!(parser("program Ahoj"));
 
     Ok(())
 }

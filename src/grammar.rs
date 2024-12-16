@@ -108,7 +108,7 @@ impl GrammarChomsky {
 
         GrammarChomsky {
             rules,
-            start_nonterm,
+            start_nonterm: capitalize_first_letter(&start_nonterm),
             nonterminals,
         }
     }
