@@ -200,10 +200,33 @@ impl From<NT> for StackObject {
     }
 }
 
+enum Token<'a> {
+    EOF,
+    String(&'a String),
+}
+
 struct TokenIter<'a> {
     str: &'a str,
     curr: String,
     terminals: Vec<String>,
+    pos: usize,
+    str_pos: usize,
+    line: usize,
+    input_str: &'a str,
+}
+
+impl<'a> TokenIter<'a> {
+    fn new(string: &str, terminals: Vec<String>) -> TokenIter {
+        TokenIter {
+            str: string,
+            curr: "".to_string(),
+            terminals,
+            pos: 0,
+            str_pos: 0,
+            line: 0,
+            input_str: string,
+        }
+    }
 }
 
 impl<'a> Iterator for TokenIter<'a> {
@@ -211,9 +234,21 @@ impl<'a> Iterator for TokenIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         for term in self.terminals.iter().rev() {
+            if term.is_empty() {
+                continue;
+            }
             if let Some(r) = self.str.strip_prefix(term.as_str()) {
                 self.str = r;
+                println!("Matched: {}", term);
                 self.curr = term.clone();
+                for c in term.chars() {
+                    self.pos += 1;
+                    self.str_pos += 1;
+                    if c == '\n' {
+                        self.line += 1;
+                        self.pos = 0;
+                    }
+                }
                 return Some(term.clone());
             }
         }
@@ -221,15 +256,15 @@ impl<'a> Iterator for TokenIter<'a> {
     }
 }
 
+fn print_arrow(pos: usize, len: usize) -> String {
+    " ".repeat(pos) + &"^".repeat(len.max(1))
+}
+
 fn get_tokenizer(grammar: &GrammarChomsky) -> impl Fn(&str) -> TokenIter {
     let mut terminals = Vec::new();
     terminals.extend(grammar.terminals.iter().cloned());
     terminals.sort_by_key(|x| x.len());
-    move |str: &str| TokenIter {
-        str,
-        curr: "".to_string(),
-        terminals: terminals.clone(),
-    }
+    move |str: &str| TokenIter::new(str, terminals.clone())
 }
 
 pub fn get_parser(
@@ -248,24 +283,26 @@ pub fn get_parser(
             name: "chomchom_root".to_string(),
             children: vec![],
         }];
-        dbg!(&stack);
-        dbg!(&grammar.start_nonterm);
+        // dbg!(&stack);
+        // dbg!(&grammar.start_nonterm);
         while !stack.is_empty() {
             match stack.pop().ok_or("Not from language")? {
                 StackObject::Nonterm(non) => {
-                    dbg!(&non);
+                    // dbg!(&non);
                     let rul = parse_table
                     .get(&non)
                     .ok_or(format!("Ivalid parsetable. No rules for {}", non))?
                     .get(&i)
                     .ok_or(
-                        format!("Not from language. Don't know which rule to use. Got {}. Expected one of {:?}. Rest: {}, Stack: {:?}",
-                            i,
-                            parse_table.get(&non).ok_or("Invalid parsetable")?.keys(), input.str,
-                            stack,
+                        format!("Unexpected token. Got {}. Expected one of {:?}. Line: {}, Pos: {}\n{}\n{}",
+                            if !i.is_empty() {i.as_str()} else {"EOF"},
+                            parse_table.get(&non).ok_or("Invalid parsetable")?.keys(), input.line,
+                            input.pos,
+                            &input.input_str[(input.str_pos.saturating_sub(100)).max(0)..(input.str_pos.saturating_add(100)).min(input.input_str.len()-1)],
+                            print_arrow(input.pos, i.len()),
                         ),
                     )?;
-                    println!("Using Rule {}", rul);
+                    // println!("Using Rule {}", rul);
                     rules.push(rul);
                     if !non.starts_with('_') {
                         stack.push(StackObject::PopNode);
@@ -318,8 +355,7 @@ pub fn get_parser(
         if stack.is_empty() && input.next().is_some() {
             return Err("Not from language too long.".into());
         }
-        dbg!(&node_stack);
-        println!("{:?}", rules);
+        // println!("{:?}", rules);
         Ok(node_stack.pop().ok_or("Invalid language.")?)
     })
 }

@@ -44,7 +44,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     std::io::stdin()
         .read_to_string(&mut sentense)
         .expect("Failed to read");
-    dbg!(parser(&sentense));
+    let parsed = match parser(&sentense) {
+        Err(err) => {
+            println!("Error: {}", err);
+            return Ok(());
+        }
+        Ok(p) => p,
+    };
+    println!("{:?}", parsed);
 
     Ok(())
 }
