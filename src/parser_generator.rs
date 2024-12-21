@@ -43,13 +43,17 @@ fn get_first_table(
                     }
                     NT::Non(n) => {
                         if let Some(first) = symbol_table.get(n) {
-                            changed = first
-                                .iter()
-                                .cloned()
-                                .map(|x| table[i].insert(x))
-                                .any(|x| x || changed);
-                            if !first.contains("") {
-                                break;
+                            if !first
+                                .is_subset(&BTreeSet::from(["".to_string()]))
+                            {
+                                changed = first
+                                    .iter()
+                                    .cloned()
+                                    .map(|x| table[i].insert(x))
+                                    .any(|x| x || changed);
+                                if !first.contains("") {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -67,44 +71,6 @@ fn get_first_table(
     Ok((table, symbol_table))
 }
 
-pub fn follow(
-    input: &NT,
-    grammar: &GrammarChomsky,
-    first_table: &BTreeMap<String, BTreeSet<String>>,
-) -> Result<HashSet<String>, Box<dyn Error>> {
-    let mut f = HashSet::new();
-    let mut folow = false;
-    for (l, r) in grammar.rules.iter() {
-        for nt in r {
-            if folow {
-                let fir = match nt {
-                    NT::Non(n) => first_table
-                        .get(n)
-                        .ok_or("No first for this nonterm")?
-                        .clone(),
-                    NT::Term(t) => BTreeSet::from([t.clone(); 1]),
-                    NT::Epsilon => unreachable!(),
-                };
-                if !fir.contains(&"".to_string()) {
-                    folow = false;
-                }
-                for ff in fir {
-                    f.insert(ff.to_string());
-                }
-            }
-            if nt == input {
-                folow = true;
-            }
-        }
-        if folow && &NT::Non(l.clone()) != input {
-            for ff in follow(&NT::Non(l.clone()), grammar, first_table)? {
-                f.insert(ff);
-            }
-        }
-    }
-    Ok(f)
-}
-
 fn get_follow_table(
     grammar: &GrammarChomsky,
     first_table: &BTreeMap<String, BTreeSet<String>>,
@@ -118,33 +84,42 @@ fn get_follow_table(
     while changed {
         changed = false;
         for (l, r) in grammar.rules.iter() {
-            let mut last = NT::Epsilon;
+            let mut last = vec![NT::Epsilon];
             for nt in r {
-                if let NT::Non(n) = last {
-                    changed = first(nt, first_table)?
-                        .iter()
-                        .map(|x| {
-                            follow_table
-                                .entry(n.clone())
-                                .or_default()
-                                .insert(x.clone())
-                        })
-                        .any(|x| x || changed);
+                for la in last.iter() {
+                    if let NT::Non(n) = la {
+                        changed = first(nt, first_table)?
+                            .iter()
+                            .filter(|x| !x.is_empty())
+                            .map(|x| {
+                                follow_table
+                                    .entry(n.clone())
+                                    .or_default()
+                                    .insert(x.clone())
+                            })
+                            .any(|x| x || changed);
+                    }
                 }
-                last = nt.clone();
+                if first(nt, first_table)?.contains("") {
+                    last.push(nt.clone())
+                } else {
+                    last = vec![nt.clone()];
+                }
             }
-            if let NT::Non(n) = last {
-                if let Some(f) = follow_table.get(l) {
-                    let f = f.clone();
-                    changed = f
-                        .iter()
-                        .map(|x| {
-                            follow_table
-                                .entry(n.clone())
-                                .or_default()
-                                .insert(x.clone())
-                        })
-                        .any(|x| x || changed);
+            for la in last {
+                if let NT::Non(n) = la {
+                    if let Some(f) = follow_table.get(l) {
+                        let f = f.clone();
+                        changed = f
+                            .iter()
+                            .map(|x| {
+                                follow_table
+                                    .entry(n.clone())
+                                    .or_default()
+                                    .insert(x.clone())
+                            })
+                            .any(|x| x || changed);
+                    }
                 }
             }
         }
@@ -166,6 +141,7 @@ fn gen_parsetable(
     // dbg!(get_first_table(grammar));
     let (first_table, symbol_first_table) = get_first_table(grammar)?;
     println!("Got table.");
+    // dbg!(&first_table, &symbol_first_table);
     // let mut follow_table = BTreeMap::new();
     // for nt in grammar.nonterminals.iter() {
     //     follow_table.insert(
@@ -175,24 +151,25 @@ fn gen_parsetable(
     // }
     let follow_table = get_follow_table(grammar, &symbol_first_table)?;
     println!("Got second table.");
+    // dbg!(&follow_table);
     let mut pt = ParseTable::new();
     for (i, (l, _)) in grammar.rules.iter().enumerate() {
         let use_follow = first_table[i].contains(&"".to_string());
         let tp_iter = first_table[i]
             .iter()
+            .filter(|x| !x.is_empty())
             .cloned()
-            .zip(iter::repeat(i).take(first_table.len()));
+            .zip(iter::repeat(i));
         if use_follow {
             let ft =
                 follow_table.get(l).ok_or(format!("No follow for {}", l))?;
-            pt.entry(l.clone()).or_default().extend(
-                tp_iter.chain(
-                    ft.iter().cloned().zip(iter::repeat(i).take(ft.len())),
-                ),
-            );
+            pt.entry(l.clone())
+                .or_default()
+                .extend(ft.iter().cloned().zip(iter::repeat(i)).chain(tp_iter));
         } else {
             pt.entry(l.clone()).or_default().extend(tp_iter);
         }
+        // dbg!(&pt);
     }
     // dbg!(first_table);
     // dbg!(follow_table);
@@ -223,16 +200,49 @@ impl From<NT> for StackObject {
     }
 }
 
+struct TokenIter<'a> {
+    str: &'a str,
+    curr: String,
+    terminals: Vec<String>,
+}
+
+impl<'a> Iterator for TokenIter<'a> {
+    type Item = String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for term in self.terminals.iter().rev() {
+            if let Some(r) = self.str.strip_prefix(term.as_str()) {
+                self.str = r;
+                self.curr = term.clone();
+                return Some(term.clone());
+            }
+        }
+        None
+    }
+}
+
+fn get_tokenizer(grammar: &GrammarChomsky) -> impl Fn(&str) -> TokenIter {
+    let mut terminals = Vec::new();
+    terminals.extend(grammar.terminals.iter().cloned());
+    terminals.sort_by_key(|x| x.len());
+    move |str: &str| TokenIter {
+        str,
+        curr: "".to_string(),
+        terminals: terminals.clone(),
+    }
+}
+
 pub fn get_parser(
     grammar: GrammarChomsky,
 ) -> Result<impl Fn(&str) -> Result<AST, Box<dyn Error>>, Box<dyn Error>> {
     let parse_table = gen_parsetable(&grammar)?;
-    println!("{:?}", parse_table);
+    // println!("{:?}", parse_table);
     Ok(move |str: &str| {
         let mut stack =
             vec![StackObject::Nonterm(grammar.start_nonterm.clone())];
-        let mut input = str.chars().map(|x| x.to_string());
+        // let mut input = str.chars().map(|x| x.to_string());
         let mut rules = vec![];
+        let mut input = get_tokenizer(&grammar)(str);
         let mut i = input.next().ok_or("Not from language, empty")?;
         let mut node_stack = vec![AST::Node {
             name: "chomchom_root".to_string(),
@@ -249,10 +259,13 @@ pub fn get_parser(
                     .ok_or(format!("Ivalid parsetable. No rules for {}", non))?
                     .get(&i)
                     .ok_or(
-                        format!("Not from language. Don't know which rule to use. Got {}. Expected one of {:?}",
+                        format!("Not from language. Don't know which rule to use. Got {}. Expected one of {:?}. Rest: {}, Stack: {:?}",
                             i,
-                            parse_table.get(&non).ok_or("Invalid parsetable")?.keys()),
+                            parse_table.get(&non).ok_or("Invalid parsetable")?.keys(), input.str,
+                            stack,
+                        ),
                     )?;
+                    println!("Using Rule {}", rul);
                     rules.push(rul);
                     if !non.starts_with('_') {
                         stack.push(StackObject::PopNode);
@@ -273,8 +286,11 @@ pub fn get_parser(
                 StackObject::Term(term) => {
                     if i != *term {
                         return Err(format!(
-                            "Not from language. Term '{}' not expected.",
-                            term
+                            "Not from language. Term '{}' not expected. Expected {}. Rest: {}, Stack: {:?}",
+                            i,
+                            term,
+                            input.str,
+                            stack,
                         )
                         .into());
                     }

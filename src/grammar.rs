@@ -76,9 +76,10 @@ pub enum NT {
 
 #[derive(Debug)]
 pub struct GrammarChomsky {
+    pub nonterminals: HashSet<String>,
+    pub terminals: HashSet<String>,
     pub rules: Vec<(String, Vec<NT>)>,
     pub start_nonterm: String,
-    pub nonterminals: HashSet<String>,
 }
 
 impl GrammarChomsky {
@@ -100,6 +101,20 @@ impl GrammarChomsky {
             }))
             .collect();
 
+        let terminals: HashSet<String> = rules
+            .iter()
+            .map(|(l, _)| l.clone())
+            .chain(rules.iter().flat_map(|(_, r)| {
+                r.iter().filter_map(|x| {
+                    if let NT::Term(nt) = x {
+                        Some(nt.clone())
+                    } else {
+                        None
+                    }
+                })
+            }))
+            .collect();
+
         for n in nonterminals.iter() {
             if !rules.iter().any(|(l, _)| l == n) {
                 panic!("Invalid gramar")
@@ -110,6 +125,7 @@ impl GrammarChomsky {
             rules,
             start_nonterm: capitalize_first_letter(&start_nonterm),
             nonterminals,
+            terminals,
         }
     }
 }
