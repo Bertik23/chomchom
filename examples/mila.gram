@@ -1,0 +1,44 @@
+program = "program" identifier ";" { var_declaration } { function_declaration } { var_declaration } expression "." ;
+
+var_declaration = ( "var" | "const" ) ( identifier { "," identifier } ( ":" type | "=" expression ) ";" ) +;
+
+function_declaration = "function" identifier "(" [ identifier ":" type { ";" identifier ":" type } ] ")" ":" type ";"
+    { var_declaration }
+    expression ";" ;
+
+expression = block | if | while | for | operationL7 | ε ;
+
+block = "begin" expression { ";" expression } "end"; 
+
+operationL0 = identifier [ ( "[" expression "]" | "(" [ call_args ] ")" ) ] | literal | "(" expression ")" ;
+
+operationL1 = operationL0 | "!" operationL1 | "~" operationL1 | "-" operationL1 | "+" operationL1 ;
+
+operationL2 = operationL1 { ( "*" | "/" | "%" | "mod" ) operationL2 } ;
+
+operationL3 = operationL2 { ( "+" | "-" ) operationL2 } ;
+
+operationL4 = operationL3 { ( "<" | ">" ) operationL3 } ;
+
+operationL5 = operationL4 { ( "=" | "<>" ) operationL4 } ;
+
+operationL6 = operationL5 { ( "and" | "or" ) operationL5 } ;
+
+operationL7 = operationL6 [ ":=" expression ] ;
+
+if = "if" expression "then" expression [ "else" expression ] ;
+
+while = "while" expression "do" expression ;
+
+for = "for" identifier ":" expression ( "to" | "downto" ) expression "do" expression ;
+
+call_args = expression { "," expression } ;
+
+type = "integer" | "array" "[" literal ".." literal "]" "of" type ;
+
+identifier = {"a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r"
+                | "s" | "t" | "u" | "w" | "x" | "y" | "z"} ;
+
+literal = _digit + ;
+
+_digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
