@@ -2,6 +2,9 @@
 name = "chomchom"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+authors = ["Bertik23 <chomchom@bertik23.tech>"]
+description = "A simple parser generator for Rust"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
