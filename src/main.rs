@@ -14,12 +14,9 @@ struct Args {
     grammar: String,
 }
 
-use crate::grammar::NT;
+use chomchom::grammar::NT;
 
-mod grammar;
-mod parser;
-mod parser_generator;
-mod tokeniser;
+use chomchom::{parser, parser_generator, tokeniser};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
@@ -51,7 +48,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Ok(p) => p,
     };
-    println!("{:?}", parsed);
+    dbg!(parsed);
 
     Ok(())
 }

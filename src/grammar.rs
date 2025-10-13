@@ -2,7 +2,10 @@ use std::{
     collections::{BTreeMap, HashSet},
     fmt::Display,
     io::IsTerminal,
+    rc::Rc,
 };
+
+pub type Rstr = Rc<str>;
 
 fn termcolor(r: u8, g: u8, b: u8) -> String {
     if std::io::stdout().is_terminal() {
@@ -20,7 +23,7 @@ fn termreset() -> String {
     }
 }
 
-fn num_to_alphastr(mut num: u32) -> String {
+fn num_to_alphastr(mut num: u32) -> Rstr {
     let mut result = "".to_string();
     num += 1;
 
@@ -35,16 +38,16 @@ fn num_to_alphastr(mut num: u32) -> String {
 
     result.push('_');
 
-    result.chars().rev().collect()
+    Rc::from(result.chars().rev().collect::<String>())
 }
 
-fn capitalize_first_letter(s: &str) -> String {
+fn capitalize_first_letter(s: &str) -> Rstr {
     let mut c = s.chars();
 
     match c.next() {
-        None => String::new(), // Handle empty string case
+        None => Rc::from(""), // Handle empty string case
         Some(first_char) => {
-            first_char.to_uppercase().collect::<String>() + c.as_str()
+            Rc::from(first_char.to_uppercase().collect::<String>() + c.as_str())
         }
     }
 }
@@ -52,8 +55,8 @@ fn capitalize_first_letter(s: &str) -> String {
 #[derive(Debug)]
 pub enum EBNF {
     Epsilon,
-    Non(String),
-    Term(String),
+    Non(Rstr),
+    Term(Rstr),
     Iteration(Box<EBNF>),
     OneOrMore(Box<EBNF>),
     Optional(Box<EBNF>),
@@ -63,31 +66,31 @@ pub enum EBNF {
 
 #[derive(Debug)]
 pub struct GrammarEBNF {
-    pub start_nonterm: String,
-    pub rules: BTreeMap<String, Vec<EBNF>>,
+    pub start_nonterm: Rstr,
+    pub rules: BTreeMap<Rstr, Vec<EBNF>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NT {
     Epsilon,
-    Non(String),
-    Term(String),
+    Non(Rc<str>),
+    Term(Rc<str>),
 }
 
 #[derive(Debug)]
 pub struct GrammarChomsky {
-    pub nonterminals: HashSet<String>,
-    pub terminals: HashSet<String>,
-    pub rules: Vec<(String, Vec<NT>)>,
-    pub start_nonterm: String,
+    pub nonterminals: HashSet<Rc<str>>,
+    pub terminals: HashSet<Rc<str>>,
+    pub rules: Vec<(Rc<str>, Vec<NT>)>,
+    pub start_nonterm: Rc<str>,
 }
 
 impl GrammarChomsky {
     fn from_rules(
-        start_nonterm: String,
-        rules: Vec<(String, Vec<NT>)>,
+        start_nonterm: Rc<str>,
+        rules: Vec<(Rc<str>, Vec<NT>)>,
     ) -> Self {
-        let nonterminals: HashSet<String> = rules
+        let nonterminals: HashSet<Rc<str>> = rules
             .iter()
             .map(|(l, _)| l.clone())
             .chain(rules.iter().flat_map(|(_, r)| {
@@ -101,7 +104,7 @@ impl GrammarChomsky {
             }))
             .collect();
 
-        let terminals: HashSet<String> = rules
+        let terminals: HashSet<Rc<str>> = rules
             .iter()
             .map(|(l, _)| l.clone())
             .chain(rules.iter().flat_map(|(_, r)| {
@@ -213,7 +216,7 @@ impl EBNF {
     }
     fn to_chomsky(
         &self,
-        rules: &mut Vec<(String, Vec<NT>)>,
+        rules: &mut Vec<(Rstr, Vec<NT>)>,
         nonterm_counter: &mut u32,
     ) -> Vec<NT> {
         match self {

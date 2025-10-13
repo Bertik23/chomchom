@@ -2,17 +2,18 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     error::Error,
     iter,
+    rc::Rc,
 };
 
-use crate::grammar::{self, GrammarChomsky, GrammarEBNF, NT};
+use crate::grammar::{self, GrammarChomsky, GrammarEBNF, Rstr, NT};
 
 fn first(
     input: &NT,
-    first_table: &BTreeMap<String, BTreeSet<String>>,
-) -> Result<BTreeSet<String>, Box<dyn Error>> {
+    first_table: &BTreeMap<Rstr, BTreeSet<Rstr>>,
+) -> Result<BTreeSet<Rstr>, Box<dyn Error>> {
     Ok(match input {
         NT::Term(f) => BTreeSet::from([f.clone(); 1]),
-        NT::Epsilon => BTreeSet::from(["".to_string(); 1]),
+        NT::Epsilon => BTreeSet::from([Rc::from(""); 1]),
         NT::Non(n) => first_table
             .get(n)
             .ok_or("No first for nonterminal")?
@@ -22,13 +23,11 @@ fn first(
 
 fn get_first_table(
     grammar: &GrammarChomsky,
-) -> Result<
-    (Vec<BTreeSet<String>>, BTreeMap<String, BTreeSet<String>>),
-    Box<dyn Error>,
-> {
+) -> Result<(Vec<BTreeSet<Rstr>>, BTreeMap<Rstr, BTreeSet<Rstr>>), Box<dyn Error>>
+{
     let mut table = Vec::new();
     table.resize(grammar.rules.len(), BTreeSet::new());
-    let mut symbol_table: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut symbol_table: BTreeMap<Rstr, BTreeSet<Rstr>> = BTreeMap::new();
     let mut changed = true;
     while changed {
         changed = false;
@@ -44,7 +43,7 @@ fn get_first_table(
                     NT::Non(n) => {
                         if let Some(first) = symbol_table.get(n) {
                             if !first
-                                .is_subset(&BTreeSet::from(["".to_string()]))
+                                .is_subset(&BTreeSet::from([Rstr::from("")]))
                             {
                                 changed = first
                                     .iter()
@@ -73,12 +72,12 @@ fn get_first_table(
 
 fn get_follow_table(
     grammar: &GrammarChomsky,
-    first_table: &BTreeMap<String, BTreeSet<String>>,
-) -> Result<BTreeMap<String, BTreeSet<String>>, Box<dyn Error>> {
-    let mut follow_table: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    first_table: &BTreeMap<Rstr, BTreeSet<Rstr>>,
+) -> Result<BTreeMap<Rstr, BTreeSet<Rstr>>, Box<dyn Error>> {
+    let mut follow_table: BTreeMap<Rstr, BTreeSet<Rstr>> = BTreeMap::new();
     follow_table.insert(
         grammar.start_nonterm.clone(),
-        BTreeSet::from(["".to_string(); 1]),
+        BTreeSet::from([Rstr::from(""); 1]),
     );
     let mut changed = true;
     while changed {
@@ -127,7 +126,7 @@ fn get_follow_table(
     Ok(follow_table)
 }
 
-type ParseTable = BTreeMap<String, BTreeMap<String, usize>>;
+type ParseTable = BTreeMap<Rstr, BTreeMap<Rstr, usize>>;
 
 fn gen_parsetable(
     grammar: &GrammarChomsky,
@@ -154,7 +153,7 @@ fn gen_parsetable(
     // dbg!(&follow_table);
     let mut pt = ParseTable::new();
     for (i, (l, _)) in grammar.rules.iter().enumerate() {
-        let use_follow = first_table[i].contains(&"".to_string());
+        let use_follow = first_table[i].contains(&Rstr::from(""));
         let tp_iter = first_table[i]
             .iter()
             .filter(|x| !x.is_empty())
@@ -178,14 +177,14 @@ fn gen_parsetable(
 
 #[derive(Debug)]
 pub enum AST {
-    Node { name: String, children: Vec<AST> },
-    Token(String),
+    Node { name: Rstr, children: Vec<AST> },
+    Token(Rstr),
 }
 
 #[derive(Debug)]
 enum StackObject {
-    Term(String),
-    Nonterm(String),
+    Term(Rstr),
+    Nonterm(Rstr),
     Epsilon,
     PopNode,
 }
@@ -207,8 +206,8 @@ enum Token<'a> {
 
 struct TokenIter<'a> {
     str: &'a str,
-    curr: String,
-    terminals: Vec<String>,
+    curr: Rstr,
+    terminals: Vec<Rstr>,
     pos: usize,
     str_pos: usize,
     line: usize,
@@ -216,10 +215,10 @@ struct TokenIter<'a> {
 }
 
 impl<'a> TokenIter<'a> {
-    fn new(string: &str, terminals: Vec<String>) -> TokenIter {
+    fn new(string: &str, terminals: Vec<Rstr>) -> TokenIter {
         TokenIter {
             str: string,
-            curr: "".to_string(),
+            curr: Rstr::from(""),
             terminals,
             pos: 0,
             str_pos: 0,
@@ -230,14 +229,14 @@ impl<'a> TokenIter<'a> {
 }
 
 impl<'a> Iterator for TokenIter<'a> {
-    type Item = String;
+    type Item = Rstr;
 
     fn next(&mut self) -> Option<Self::Item> {
         for term in self.terminals.iter().rev() {
             if term.is_empty() {
                 continue;
             }
-            if let Some(r) = self.str.strip_prefix(term.as_str()) {
+            if let Some(r) = self.str.strip_prefix(term.as_ref()) {
                 self.str = r;
                 println!("Matched: {}", term);
                 self.curr = term.clone();
@@ -280,7 +279,7 @@ pub fn get_parser(
         let mut input = get_tokenizer(&grammar)(str);
         let mut i = input.next().ok_or("Not from language, empty")?;
         let mut node_stack = vec![AST::Node {
-            name: "chomchom_root".to_string(),
+            name: Rstr::from("chomchom_root"),
             children: vec![],
         }];
         // dbg!(&stack);
@@ -295,7 +294,7 @@ pub fn get_parser(
                     .get(&i)
                     .ok_or(
                         format!("Unexpected token. Got {}. Expected one of {:?}. Line: {}, Pos: {}\n{}\n{}",
-                            if !i.is_empty() {i.as_str()} else {"EOF"},
+                            if !i.is_empty() {i.as_ref()} else {"EOF"},
                             parse_table.get(&non).ok_or("Invalid parsetable")?.keys(), input.line,
                             input.pos,
                             &input.input_str[(input.str_pos.saturating_sub(100)).max(0)..(input.str_pos.saturating_add(100)).min(input.input_str.len()-1)],
@@ -321,7 +320,7 @@ pub fn get_parser(
                     );
                 }
                 StackObject::Term(term) => {
-                    if i != *term {
+                    if i != term {
                         return Err(format!(
                             "Not from language. Term '{}' not expected. Expected {}. Rest: {}, Stack: {:?}",
                             i,
@@ -346,7 +345,7 @@ pub fn get_parser(
                     {
                         children.push(n);
                     } else {
-                        panic!("aaa");
+                        panic!("Cannot pop emptry stack");
                         // node_stack.push(n);
                     }
                 }

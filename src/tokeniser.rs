@@ -1,7 +1,9 @@
+type Rstr = std::rc::Rc<str>;
+
 #[derive(Debug)]
 pub enum Token {
-    Terminal(String),
-    Nonterminal(String),
+    Terminal(Rstr),
+    Nonterminal(Rstr),
     LBracket,
     RBracket,
     LBrace,
