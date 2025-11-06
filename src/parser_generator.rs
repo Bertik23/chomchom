@@ -451,17 +451,18 @@ pub fn get_parser(
                         )
                         .into());
                     }
+                    let eof = Token {
+                        token: TokenType::EOF,
+                        line: i.line(),
+                        column: i.column() + i.as_str().len(),
+                        str_pos: i.str_pos() + i.as_str().len(),
+                    };
                     if let AST::Node { children, .. } =
                         node_stack.last_mut().ok_or("Empty stack?")?
                     {
                         children.push(AST::Token(i));
                     }
-                    i = input.next().unwrap_or(Box::new(Token {
-                        token: TokenType::EOF,
-                        line: 0,
-                        column: 0,
-                        str_pos: 0,
-                    }));
+                    i = input.next().unwrap_or(Box::new(eof));
                 }
                 StackObject::Epsilon => {
                     dbg!("Epsilon");
