@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //     &NT::Non("F".into()),
     //     &ast.to_chomsky()
     // )?);
-    let parser = parser_generator::get_parser(ast.to_chomsky())?;
+    let parser = parser_generator::get_parser(ast.to_chomsky(), None)?;
     let mut sentense = String::new();
     std::io::stdin()
         .read_to_string(&mut sentense)
@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Ok(p) => p,
     };
-    dbg!(parsed);
+    // dbg!(parsed);
 
     Ok(())
 }

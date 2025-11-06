@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     error::Error,
+    fmt::Display,
     iter,
     rc::Rc,
 };
@@ -175,13 +176,11 @@ fn gen_parsetable(
     Ok(pt)
 }
 
-#[derive(Debug)]
 pub enum AST {
     Node { name: Rstr, children: Vec<AST> },
-    Token(Rstr),
+    Token(Box<dyn TokenTrait>),
 }
 
-#[derive(Debug)]
 enum StackObject {
     Term(Rstr),
     Nonterm(Rstr),
@@ -199,25 +198,76 @@ impl From<NT> for StackObject {
     }
 }
 
-enum Token<'a> {
+#[derive(Debug)]
+enum TokenType {
     EOF,
-    String(&'a String),
+    String(Rstr),
 }
 
-struct TokenIter<'a> {
-    str: &'a str,
+impl Display for TokenType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TokenType::EOF => write!(f, "EOF"),
+            TokenType::String(s) => write!(f, "{}", s),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Token {
+    token: TokenType,
+    line: usize,
+    column: usize,
+    str_pos: usize,
+}
+
+impl Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.token)
+    }
+}
+
+impl TokenTrait for Token {
+    fn as_str(&self) -> &str {
+        match &self.token {
+            TokenType::EOF => "EOF",
+            TokenType::String(s) => s.as_ref(),
+        }
+    }
+    fn column(&self) -> usize {
+        self.column
+    }
+    fn line(&self) -> usize {
+        self.line
+    }
+    fn str_pos(&self) -> usize {
+        self.str_pos
+    }
+}
+
+pub trait TokenTrait {
+    fn as_str(&self) -> &str;
+    fn column(&self) -> usize;
+    fn line(&self) -> usize;
+    fn str_pos(&self) -> usize;
+}
+
+pub trait TokenReq: TokenTrait + std::cmp::PartialEq<dyn TokenTrait> {}
+
+struct TokenIter {
+    str: Rstr,
     curr: Rstr,
     terminals: Vec<Rstr>,
     pos: usize,
     str_pos: usize,
     line: usize,
-    input_str: &'a str,
+    input_str: Rstr,
 }
 
-impl<'a> TokenIter<'a> {
-    fn new(string: &str, terminals: Vec<Rstr>) -> TokenIter {
+impl TokenIter {
+    fn new(string: Rstr, terminals: Vec<Rstr>) -> TokenIter {
         TokenIter {
-            str: string,
+            str: string.clone(),
             curr: Rstr::from(""),
             terminals,
             pos: 0,
@@ -228,8 +278,8 @@ impl<'a> TokenIter<'a> {
     }
 }
 
-impl<'a> Iterator for TokenIter<'a> {
-    type Item = Rstr;
+impl<'a> Iterator for TokenIter {
+    type Item = Box<dyn TokenTrait>;
 
     fn next(&mut self) -> Option<Self::Item> {
         for term in self.terminals.iter().rev() {
@@ -237,7 +287,7 @@ impl<'a> Iterator for TokenIter<'a> {
                 continue;
             }
             if let Some(r) = self.str.strip_prefix(term.as_ref()) {
-                self.str = r;
+                self.str = r.into();
                 println!("Matched: {}", term);
                 self.curr = term.clone();
                 for c in term.chars() {
@@ -248,7 +298,12 @@ impl<'a> Iterator for TokenIter<'a> {
                         self.pos = 0;
                     }
                 }
-                return Some(term.clone());
+                return Some(Box::new(Token {
+                    token: TokenType::String(term.clone()),
+                    line: self.line,
+                    column: self.pos - term.len(),
+                    str_pos: self.str_pos - term.len(),
+                }));
             }
         }
         None
@@ -259,24 +314,34 @@ fn print_arrow(pos: usize, len: usize) -> String {
     " ".repeat(pos) + &"^".repeat(len.max(1))
 }
 
-fn get_tokenizer(grammar: &GrammarChomsky) -> impl Fn(&str) -> TokenIter {
+pub type TokenIteratorType = Box<dyn Iterator<Item = Box<dyn TokenTrait>>>;
+
+fn get_tokenizer<'a>(
+    grammar: &GrammarChomsky,
+) -> impl Fn(&'a str) -> TokenIteratorType {
     let mut terminals = Vec::new();
     terminals.extend(grammar.terminals.iter().cloned());
     terminals.sort_by_key(|x| x.len());
-    move |str: &str| TokenIter::new(str, terminals.clone())
+    move |str: &'a str| Box::new(TokenIter::new(str.into(), terminals.clone()))
 }
+
+pub type GetTokeniserType = Box<dyn Fn(&str) -> TokenIteratorType>;
 
 pub fn get_parser(
     grammar: GrammarChomsky,
+    tokenizer: Option<GetTokeniserType>,
 ) -> Result<impl Fn(&str) -> Result<AST, Box<dyn Error>>, Box<dyn Error>> {
     let parse_table = gen_parsetable(&grammar)?;
     // println!("{:?}", parse_table);
-    Ok(move |str: &str| {
+    Ok(move |input_str: &str| {
         let mut stack =
             vec![StackObject::Nonterm(grammar.start_nonterm.clone())];
         // let mut input = str.chars().map(|x| x.to_string());
         let mut rules = vec![];
-        let mut input = get_tokenizer(&grammar)(str);
+        let mut input = tokenizer.as_ref().map_or_else(
+            || get_tokenizer(&grammar)(input_str),
+            |t| t(input_str),
+        );
         let mut i = input.next().ok_or("Not from language, empty")?;
         let mut node_stack = vec![AST::Node {
             name: Rstr::from("chomchom_root"),
@@ -285,20 +350,22 @@ pub fn get_parser(
         // dbg!(&stack);
         // dbg!(&grammar.start_nonterm);
         while !stack.is_empty() {
+            // dbg!(stack.last());
+            // dbg!(&i, &input);
             match stack.pop().ok_or("Not from language")? {
                 StackObject::Nonterm(non) => {
                     // dbg!(&non);
                     let rul = parse_table
                     .get(&non)
                     .ok_or(format!("Ivalid parsetable. No rules for {}", non))?
-                    .get(&i)
+                    .get(i.as_str())
                     .ok_or(
-                        format!("Unexpected token. Got {}. Expected one of {:?}. Line: {}, Pos: {}\n{}\n{}",
-                            if !i.is_empty() {i.as_ref()} else {"EOF"},
-                            parse_table.get(&non).ok_or("Invalid parsetable")?.keys(), input.line,
-                            input.pos,
-                            &input.input_str[(input.str_pos.saturating_sub(100)).max(0)..(input.str_pos.saturating_add(100)).min(input.input_str.len()-1)],
-                            print_arrow(input.pos, i.len()),
+                        format!("Unexpected token. Got `{}`. Expected one of {:?}. Line: {}, Pos: {}\n{}\n{}",
+                            i.as_str(),
+                            parse_table.get(&non).ok_or("Invalid parsetable")?.keys(), i.line(),
+                            i.column(),
+                            input_str, //[(i.str_pos().saturating_sub(100)).max(0)..(i.str_pos().saturating_add(100)).min(input_str.len()-1)],
+                            print_arrow(i.column(), i.as_str().len()),
                         ),
                     )?;
                     // println!("Using Rule {}", rul);
@@ -320,25 +387,32 @@ pub fn get_parser(
                     );
                 }
                 StackObject::Term(term) => {
-                    if i != term {
+                    if term.as_ref() != i.as_str() {
                         return Err(format!(
-                            "Not from language. Term '{}' not expected. Expected {}. Rest: {}, Stack: {:?}",
-                            i,
+                            "Not from language. Term '{}' not expected. Expected {}. Rest: {}, Stack:",
+                            i.as_str(),
                             term,
-                            input.str,
-                            stack,
+                            input_str[i.str_pos()..].to_string(),
                         )
                         .into());
                     }
                     if let AST::Node { children, .. } =
                         node_stack.last_mut().ok_or("Empty stack?")?
                     {
-                        children.push(AST::Token(term));
+                        children.push(AST::Token(i));
                     }
-                    i = input.next().unwrap_or("".into());
+                    i = input.next().unwrap_or(Box::new(Token {
+                        token: TokenType::EOF,
+                        line: 0,
+                        column: 0,
+                        str_pos: 0,
+                    }));
                 }
-                StackObject::Epsilon => {}
+                StackObject::Epsilon => {
+                    dbg!("Epsilon");
+                }
                 StackObject::PopNode => {
+                    dbg!("PopNode");
                     let n = node_stack.pop().ok_or("Empty stack?")?;
                     if let Some(AST::Node { children, .. }) =
                         node_stack.last_mut()
