@@ -272,10 +272,10 @@ impl Display for Token {
 }
 
 impl TokenTrait for Token {
-    fn as_str(&self) -> &str {
+    fn as_str(&self) -> Rstr {
         match &self.token {
-            TokenType::EOF => "EOF",
-            TokenType::String(s) => s.as_ref(),
+            TokenType::EOF => Rstr::from("EOF"),
+            TokenType::String(s) => s.clone(),
         }
     }
     fn column(&self) -> usize {
@@ -290,7 +290,7 @@ impl TokenTrait for Token {
 }
 
 pub trait TokenTrait {
-    fn as_str(&self) -> &str;
+    fn as_str(&self) -> Rstr;
     fn column(&self) -> usize;
     fn line(&self) -> usize;
     fn str_pos(&self) -> usize;
@@ -413,7 +413,7 @@ pub fn get_parser(
                     let rul = parse_table
                     .get(&non)
                     .ok_or(format!("Ivalid parsetable. No rules for {}", non))?
-                    .get(i.as_str())
+                    .get(i.as_str().as_ref())
                     .ok_or(
                         format!("Unexpected token. Got `{}`. Expected one of {:?}. Line: {}, Pos: {}\n{}\n{}",
                             i.as_str(),
@@ -442,7 +442,7 @@ pub fn get_parser(
                     );
                 }
                 StackObject::Term(term) => {
-                    if term.as_ref() != i.as_str() {
+                    if term.as_ref() != i.as_str().as_ref() {
                         return Err(format!(
                             "Not from language. Term '{}' not expected. Expected {}. Rest: {}, Stack:",
                             i.as_str(),
