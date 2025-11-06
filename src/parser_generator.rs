@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     error::Error,
-    fmt::Display,
+    fmt::{Debug, Display},
     iter,
     rc::Rc,
 };
@@ -176,9 +176,10 @@ fn gen_parsetable(
     Ok(pt)
 }
 
+#[derive(Debug)]
 pub enum AST {
     Node { name: Rstr, children: Vec<AST> },
-    Token(Box<dyn TokenTrait>),
+    Token(Box<dyn TokenReq>),
 }
 
 enum StackObject {
@@ -204,12 +205,55 @@ enum TokenType {
     String(Rstr),
 }
 
+impl From<String> for Token {
+    fn from(value: String) -> Self {
+        Token {
+            token: TokenType::String(Rstr::from(value)),
+            line: 0,
+            column: 0,
+            str_pos: 0,
+        }
+    }
+}
+
 impl Display for TokenType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TokenType::EOF => write!(f, "EOF"),
             TokenType::String(s) => write!(f, "{}", s),
         }
+    }
+}
+
+impl Display for dyn TokenTrait {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl Debug for dyn TokenTrait {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Token {{ token: {}, line: {}, column: {}, str_pos: {} }}",
+            self.as_str(),
+            self.line(),
+            self.column(),
+            self.str_pos()
+        )
+    }
+}
+
+impl Debug for dyn TokenReq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Token {{ token: {}, line: {}, column: {}, str_pos: {} }}",
+            self.as_str(),
+            self.line(),
+            self.column(),
+            self.str_pos()
+        )
     }
 }
 
@@ -252,7 +296,18 @@ pub trait TokenTrait {
     fn str_pos(&self) -> usize;
 }
 
+impl PartialEq<dyn TokenTrait> for Token {
+    fn eq(&self, other: &dyn TokenTrait) -> bool {
+        self.as_str() == other.as_str()
+            && self.column() == other.column()
+            && self.line() == other.line()
+            && self.str_pos() == other.str_pos()
+    }
+}
+
 pub trait TokenReq: TokenTrait + std::cmp::PartialEq<dyn TokenTrait> {}
+
+impl TokenReq for Token {}
 
 struct TokenIter {
     str: Rstr,
@@ -279,7 +334,7 @@ impl TokenIter {
 }
 
 impl<'a> Iterator for TokenIter {
-    type Item = Box<dyn TokenTrait>;
+    type Item = Box<dyn TokenReq>;
 
     fn next(&mut self) -> Option<Self::Item> {
         for term in self.terminals.iter().rev() {
@@ -314,7 +369,7 @@ fn print_arrow(pos: usize, len: usize) -> String {
     " ".repeat(pos) + &"^".repeat(len.max(1))
 }
 
-pub type TokenIteratorType = Box<dyn Iterator<Item = Box<dyn TokenTrait>>>;
+pub type TokenIteratorType = Box<dyn Iterator<Item = Box<dyn TokenReq>>>;
 
 fn get_tokenizer<'a>(
     grammar: &GrammarChomsky,

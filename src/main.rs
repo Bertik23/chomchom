@@ -48,7 +48,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Ok(p) => p,
     };
-    // dbg!(parsed);
+    dbg!(parsed);
+
+    // parsed
 
     Ok(())
 }
