@@ -77,7 +77,7 @@ pub enum NT {
     Term(Rc<str>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GrammarChomsky {
     pub nonterminals: HashSet<Rc<str>>,
     pub terminals: HashSet<Rc<str>>,

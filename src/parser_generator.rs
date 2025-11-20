@@ -177,9 +177,12 @@ fn gen_parsetable(
 }
 
 #[derive(Debug)]
-pub enum AST {
-    Node { name: Rstr, children: Vec<AST> },
-    Token(Box<dyn TokenReq>),
+pub enum AST<TokenT: TokenReq> {
+    Node {
+        name: Rstr,
+        children: Vec<AST<TokenT>>,
+    },
+    Token(TokenT),
 }
 
 enum StackObject {
@@ -225,40 +228,40 @@ impl Display for TokenType {
     }
 }
 
-impl Display for dyn TokenTrait {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
+// impl Display for dyn TokenTrait {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         write!(f, "{}", self.as_str())
+//     }
+// }
 
-impl Debug for dyn TokenTrait {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Token {{ token: {}, line: {}, column: {}, str_pos: {} }}",
-            self.as_str(),
-            self.line(),
-            self.column(),
-            self.str_pos()
-        )
-    }
-}
+// impl Debug for dyn TokenTrait {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         write!(
+//             f,
+//             "Token {{ token: {}, line: {}, column: {}, str_pos: {} }}",
+//             self.as_str(),
+//             self.line(),
+//             self.column(),
+//             self.str_pos()
+//         )
+//     }
+// }
 
-impl Debug for dyn TokenReq {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Token {{ token: {}, line: {}, column: {}, str_pos: {} }}",
-            self.as_str(),
-            self.line(),
-            self.column(),
-            self.str_pos()
-        )
-    }
-}
+// impl Debug for dyn TokenReq {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         write!(
+//             f,
+//             "Token {{ token: {}, line: {}, column: {}, str_pos: {} }}",
+//             self.as_str(),
+//             self.line(),
+//             self.column(),
+//             self.str_pos()
+//         )
+//     }
+// }
 
 #[derive(Debug)]
-struct Token {
+pub struct Token {
     token: TokenType,
     line: usize,
     column: usize,
@@ -287,6 +290,14 @@ impl TokenTrait for Token {
     fn str_pos(&self) -> usize {
         self.str_pos
     }
+    fn make_eof(line: usize, column: usize, str_pos: usize) -> Self {
+        Token {
+            token: TokenType::EOF,
+            line,
+            column,
+            str_pos,
+        }
+    }
 }
 
 pub trait TokenTrait {
@@ -294,18 +305,19 @@ pub trait TokenTrait {
     fn column(&self) -> usize;
     fn line(&self) -> usize;
     fn str_pos(&self) -> usize;
+    fn make_eof(line: usize, column: usize, str_pos: usize) -> Self;
 }
 
-impl PartialEq<dyn TokenTrait> for Token {
-    fn eq(&self, other: &dyn TokenTrait) -> bool {
-        self.as_str() == other.as_str()
-            && self.column() == other.column()
-            && self.line() == other.line()
-            && self.str_pos() == other.str_pos()
-    }
-}
+// impl PartialEq<dyn TokenTrait> for Token {
+//     fn eq(&self, other: &dyn TokenTrait) -> bool {
+//         self.as_str() == other.as_str()
+//             && self.column() == other.column()
+//             && self.line() == other.line()
+//             && self.str_pos() == other.str_pos()
+//     }
+// }
 
-pub trait TokenReq: TokenTrait + std::cmp::PartialEq<dyn TokenTrait> {}
+pub trait TokenReq: TokenTrait {}
 
 impl TokenReq for Token {}
 
@@ -334,7 +346,7 @@ impl TokenIter {
 }
 
 impl<'a> Iterator for TokenIter {
-    type Item = Box<dyn TokenReq>;
+    type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
         for term in self.terminals.iter().rev() {
@@ -353,12 +365,12 @@ impl<'a> Iterator for TokenIter {
                         self.pos = 0;
                     }
                 }
-                return Some(Box::new(Token {
+                return Some(Token {
                     token: TokenType::String(term.clone()),
                     line: self.line,
                     column: self.pos - term.len(),
                     str_pos: self.str_pos - term.len(),
-                }));
+                });
             }
         }
         None
@@ -369,34 +381,32 @@ fn print_arrow(pos: usize, len: usize) -> String {
     " ".repeat(pos) + &"^".repeat(len.max(1))
 }
 
-pub type TokenIteratorType = Box<dyn Iterator<Item = Box<dyn TokenReq>>>;
+pub type TokenIteratorType<TokenT: TokenReq> = Box<dyn Iterator<Item = TokenT>>;
 
-fn get_tokenizer<'a>(
+pub fn get_tokenizer<'a>(
     grammar: &GrammarChomsky,
-) -> impl Fn(&'a str) -> TokenIteratorType {
+) -> impl Fn(&'a str) -> TokenIteratorType<Token> {
     let mut terminals = Vec::new();
     terminals.extend(grammar.terminals.iter().cloned());
     terminals.sort_by_key(|x| x.len());
     move |str: &'a str| Box::new(TokenIter::new(str.into(), terminals.clone()))
 }
 
-pub type GetTokeniserType = Box<dyn Fn(&str) -> TokenIteratorType>;
-
-pub fn get_parser(
+pub fn get_parser<'a, TokenT: TokenReq>(
     grammar: GrammarChomsky,
-    tokenizer: Option<GetTokeniserType>,
-) -> Result<impl Fn(&str) -> Result<AST, Box<dyn Error>>, Box<dyn Error>> {
+    tokenizer: impl Fn(&'a str) -> TokenIteratorType<TokenT>,
+) -> Result<
+    impl Fn(&'a str) -> Result<AST<TokenT>, Box<dyn Error>>,
+    Box<dyn Error>,
+> {
     let parse_table = gen_parsetable(&grammar)?;
     // println!("{:?}", parse_table);
-    Ok(move |input_str: &str| {
+    Ok(move |input_str: &'a str| {
         let mut stack =
             vec![StackObject::Nonterm(grammar.start_nonterm.clone())];
         // let mut input = str.chars().map(|x| x.to_string());
         let mut rules = vec![];
-        let mut input = tokenizer.as_ref().map_or_else(
-            || get_tokenizer(&grammar)(input_str),
-            |t| t(input_str),
-        );
+        let mut input = tokenizer(input_str);
         let mut i = input.next().ok_or("Not from language, empty")?;
         let mut node_stack = vec![AST::Node {
             name: Rstr::from("chomchom_root"),
@@ -451,18 +461,17 @@ pub fn get_parser(
                         )
                         .into());
                     }
-                    let eof = Token {
-                        token: TokenType::EOF,
-                        line: i.line(),
-                        column: i.column() + i.as_str().len(),
-                        str_pos: i.str_pos() + i.as_str().len(),
-                    };
+                    let eof = TokenT::make_eof(
+                        i.line(),
+                        i.column() + i.as_str().len(),
+                        i.str_pos() + i.as_str().len(),
+                    );
                     if let AST::Node { children, .. } =
                         node_stack.last_mut().ok_or("Empty stack?")?
                     {
                         children.push(AST::Token(i));
                     }
-                    i = input.next().unwrap_or(Box::new(eof));
+                    i = input.next().unwrap_or(eof);
                 }
                 StackObject::Epsilon => {
                     dbg!("Epsilon");

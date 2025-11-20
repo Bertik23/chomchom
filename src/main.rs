@@ -14,7 +14,7 @@ struct Args {
     grammar: String,
 }
 
-use chomchom::grammar::NT;
+use chomchom::{grammar::NT, parser_generator::get_tokenizer};
 
 use chomchom::{parser, parser_generator, tokeniser};
 
@@ -36,11 +36,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     //     &NT::Non("F".into()),
     //     &ast.to_chomsky()
     // )?);
-    let parser = parser_generator::get_parser(ast.to_chomsky(), None)?;
+    let grammar = ast.to_chomsky();
     let mut sentense = String::new();
     std::io::stdin()
         .read_to_string(&mut sentense)
         .expect("Failed to read");
+    let parser =
+        parser_generator::get_parser(grammar.clone(), get_tokenizer(&grammar))?;
     let parsed = match parser(&sentense) {
         Err(err) => {
             println!("Error: {}", err);
