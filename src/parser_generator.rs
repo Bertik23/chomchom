@@ -185,6 +185,15 @@ pub enum AST<TokenT: TokenReq> {
     Token(TokenT),
 }
 
+impl<T: TokenReq> AST<T> {
+    pub fn as_str(&self) -> Rstr {
+        match self {
+            AST::Node { name, .. } => name.clone(),
+            AST::Token(t) => t.as_str(),
+        }
+    }
+}
+
 enum StackObject {
     Term(Rstr),
     Nonterm(Rstr),
