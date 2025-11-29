@@ -9,7 +9,7 @@ pub mod tokeniser;
 
 pub fn get_parser<'a, TokenT: TokenReq>(
     grammar_file: &str,
-    tokeniser: impl Fn(&'a str) -> TokenIteratorType<TokenT>,
+    tokeniser: impl Fn(&'a str) -> TokenIteratorType<'a, TokenT>,
 ) -> impl Fn(&'a str) -> Result<parser_generator::AST<TokenT>, Box<dyn Error>> {
     let gram_str =
         std::fs::read_to_string(grammar_file).expect("Failed to read grammar.");

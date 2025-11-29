@@ -390,7 +390,8 @@ fn print_arrow(pos: usize, len: usize) -> String {
     " ".repeat(pos) + &"^".repeat(len.max(1))
 }
 
-pub type TokenIteratorType<TokenT: TokenReq> = Box<dyn Iterator<Item = TokenT>>;
+pub type TokenIteratorType<'s, TokenT: TokenReq> =
+    Box<dyn Iterator<Item = TokenT> + 's>;
 
 pub fn get_tokenizer<'a>(
     grammar: &GrammarChomsky,
@@ -403,7 +404,7 @@ pub fn get_tokenizer<'a>(
 
 pub fn get_parser<'a, TokenT: TokenReq>(
     grammar: GrammarChomsky,
-    tokenizer: impl Fn(&'a str) -> TokenIteratorType<TokenT>,
+    tokenizer: impl Fn(&'a str) -> TokenIteratorType<'a, TokenT>,
 ) -> Result<
     impl Fn(&'a str) -> Result<AST<TokenT>, Box<dyn Error>>,
     Box<dyn Error>,
