@@ -140,7 +140,7 @@ fn gen_parsetable(
     // dbg!(&first_table);
     // dbg!(get_first_table(grammar));
     let (first_table, symbol_first_table) = get_first_table(grammar)?;
-    println!("Got table.");
+    // println!("Got table.");
     // dbg!(&first_table, &symbol_first_table);
     // let mut follow_table = BTreeMap::new();
     // for nt in grammar.nonterminals.iter() {
@@ -150,7 +150,7 @@ fn gen_parsetable(
     //     );
     // }
     let follow_table = get_follow_table(grammar, &symbol_first_table)?;
-    println!("Got second table.");
+    // println!("Got second table.");
     // dbg!(&follow_table);
     let mut pt = ParseTable::new();
     for (i, (l, _)) in grammar.rules.iter().enumerate() {
@@ -307,6 +307,9 @@ impl TokenTrait for Token {
             str_pos,
         }
     }
+    fn actual_string(&self) -> Rstr {
+        self.as_str()
+    }
 }
 
 pub trait TokenTrait {
@@ -315,6 +318,9 @@ pub trait TokenTrait {
     fn line(&self) -> usize;
     fn str_pos(&self) -> usize;
     fn make_eof(line: usize, column: usize, str_pos: usize) -> Self;
+    fn actual_string(&self) -> Rstr; // {
+                                     // self.as_str()
+                                     // }
 }
 
 // impl PartialEq<dyn TokenTrait> for Token {
@@ -364,7 +370,7 @@ impl<'a> Iterator for TokenIter {
             }
             if let Some(r) = self.str.strip_prefix(term.as_ref()) {
                 self.str = r.into();
-                println!("Matched: {}", term);
+                // println!("Matched: {}", term);
                 self.curr = term.clone();
                 for c in term.chars() {
                     self.pos += 1;
@@ -430,6 +436,14 @@ pub fn get_parser<'a, TokenT: TokenReq>(
             match stack.pop().ok_or("Not from language")? {
                 StackObject::Nonterm(non) => {
                     // dbg!(&non);
+                    // println!(
+                    //     "Possible tokens at {:?}: {:?}",
+                    //     non,
+                    //     parse_table
+                    //         .get(&non)
+                    //         .ok_or("Invalid parsetable")?
+                    //         .keys()
+                    // );
                     let rul = parse_table
                     .get(&non)
                     .ok_or(format!("Ivalid parsetable. No rules for {}", non))?
@@ -439,8 +453,31 @@ pub fn get_parser<'a, TokenT: TokenReq>(
                             i.as_str(),
                             parse_table.get(&non).ok_or("Invalid parsetable")?.keys(), i.line(),
                             i.column(),
-                            input_str, //[(i.str_pos().saturating_sub(100)).max(0)..(i.str_pos().saturating_add(100)).min(input_str.len()-1)],
-                            print_arrow(i.column(), i.as_str().len()),
+                            {
+                                let pos = i.str_pos();
+
+                                // 1. Find the start of the line (search backwards for '\n')
+                                // If no newline is found, we are at the start of the string (0)
+                                let start = input_str[..pos]
+                                    .rfind('\n')
+                                    .map(|index| index + 1) // Skip the actual '\n' char
+                                    .unwrap_or(0);
+
+                                // 2. Find the end of the line (search forwards for '\n')
+                                // If no newline is found, we go to the end of the string
+                                let end = input_str[pos..]
+                                    .find('\n')
+                                    .map(|index| pos + index) // Add offset to current pos
+                                    .unwrap_or(input_str.len());
+
+                                // println!("Line content: {}, start: {}, end: {}", &input_str[start..end], start, end);
+                                // println!("Actual string: {}", i.actual_string());
+
+                                // 3. Slice the string
+                                &input_str[start..end]
+                            },
+                            // input_str[i.str_pos()], //[(i.str_pos().saturating_sub(100)).max(0)..(i.str_pos().saturating_add(100)).min(input_str.len()-1)],
+                            print_arrow(i.column(), i.actual_string().len()),
                         ),
                     )?;
                     // println!("Using Rule {}", rul);
@@ -448,20 +485,21 @@ pub fn get_parser<'a, TokenT: TokenReq>(
                     if !non.starts_with('_') {
                         stack.push(StackObject::PopNode);
                         node_stack.push(AST::Node {
-                            name: non,
+                            name: non.clone(),
                             children: Vec::new(),
                         })
                     }
+                    // println!("Expanding nonterm: {}", non);
                     stack.extend(
-                        grammar.rules[*rul]
-                            .1
-                            .iter()
-                            .rev()
-                            .cloned()
-                            .map(|x| x.into()),
+                        grammar.rules[*rul].1.iter().rev().cloned().map(|x| {
+                            // println!("{}", x);
+                            x.into()
+                        }),
                     );
+                    // println!("---");
                 }
                 StackObject::Term(term) => {
+                    // println!("Matching term: {}", term);
                     if term.as_ref() != i.as_str().as_ref() {
                         return Err(format!(
                             "Not from language. Term '{}' not expected. Expected {}. Rest: {}, Stack:",
@@ -484,10 +522,10 @@ pub fn get_parser<'a, TokenT: TokenReq>(
                     i = input.next().unwrap_or(eof);
                 }
                 StackObject::Epsilon => {
-                    dbg!("Epsilon");
+                    // dbg!("Epsilon");
                 }
                 StackObject::PopNode => {
-                    dbg!("PopNode");
+                    // dbg!("PopNode");
                     let n = node_stack.pop().ok_or("Empty stack?")?;
                     if let Some(AST::Node { children, .. }) =
                         node_stack.last_mut()
